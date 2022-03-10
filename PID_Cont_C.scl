@@ -1,4 +1,4 @@
-﻿```Pascal
+```Pascal
  
  FUNCTION_BLOCK "PID_C"
 { S7_Optimized_Access := 'TRUE' }
