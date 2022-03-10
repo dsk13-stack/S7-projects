@@ -1,0 +1,344 @@
+﻿FUNCTION_BLOCK "PID_C"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      Reset : Bool;   // Полный рестарт
+      ManualEnable : Bool := TRUE;   // Ручной режим включить
+      Input_PER_on : Bool;   // Чтение входной переменной с периферии включить
+      P_on : Bool := TRUE;   // Пропорциональную составляющую включить
+      I_on : Bool := TRUE;   // Интегральную составляющую включить
+      I_hold : Bool;   // Удержание интегральной составляющей
+      I_init : Bool;   // Реинициализировать интегральную составляющую
+      D_on : Bool;   // Дифференциальную составляющую включить
+      Cycle : Time := T#1S;   // Время выполнения блока
+      Setpoint : Real;   // Внутреннее задание
+      Input : Real;   // Входная переменная действительная
+      Input_PER : Word;   // Входная переменная аналоговая
+      ManualValue : Real;   // Ручное задание выхода
+      P : Real := 2.0;   // Коэффициент пропорциональности
+      I : Time := T#20S;   // Время интегрирования
+      D : Time := T#10S;   // Время дифференцирования
+      TmLag : Time := T#2S;   // Время действия дифференциальной составляющей
+      Deadband : Real;   // Ширина зоны нечувствительности
+      HLM : Real := 100.0;   // Верхний предел выходного сигнала
+      LLM : Real;   // Нижний предел выходного сигнала
+      InputMultFactor : Real := 1.0;   // Коэффициент для корректировки входной переменной (умножение)
+      InputSumFactor : Real;   // Коэффициент для корректировки входной переменной (сложение)
+      OutputMultFactor : Real := 1.0;   // Коэффициент для корректировки выходной переменной (умножение)
+      OutputSumFactor : Real;   // Коэффициент для корректировки входной переменной (сложение)
+      I_startVal : Real;   // Начальное значение интегральной составляющей
+      Disturbance : Real;   // Возмущение
+      Mode : Int := 4;   // Режим работы
+      ModeActivate : Bool;   // Активировать режим
+      ErrorAck : Bool;   // Сброс ошибок
+      InvertOutput : Bool;   // Инвертировать выход (от 100 до 0)
+   END_VAR
+
+   VAR_OUTPUT 
+      Output : Real;   // Выходное значение
+      Output_PER : Word;   // Выходное значение (переферия)
+      SetpointLimit_H : Bool;   // Верхний предел выхода достигнут
+      SetpointLimit_L : Bool;   // Нижний предел выхода достигнут
+      Output_P : Real;   // Пропорциональная составляющая
+      Output_I : Real;   // Интегральная составляющая
+      Output_D : Real;   // Дифференциальная составляющая
+      ScaledInput : Real;   // Входная переменная
+      ErrorValue : Real;   // Сигнал рассогласования
+      Error : Bool;   // Активна ошибка
+      State : Int;   // Текущее состояние регулятора
+   END_VAR
+
+   VAR 
+      statInvOld : Real;
+      statIOld : Real;
+      statRestInt : Real;
+      statRestDif : Real;
+      statBack : Real;
+      statLmn : Real;
+      statHLmOn : Bool;   // Выход достиг максимального значения
+      statLLmOn : Bool;   // Выход достиг минимального значения
+      statbILimOn : Bool := TRUE;
+      statPresetMode : Int;
+      instModeChange {InstructionName := 'R_TRIG'; LibVersion := '1.0'} : R_TRIG;
+   END_VAR
+
+   VAR_TEMP 
+      tempHvar : Real;   // Вспомогательная переменная
+      tempCycleReal : Real;   // Время цикла в real
+      tempDiff : Real;   // Измененное значение
+      tempActual : Real;   // Фактическое значение переменной процесса
+      tempErKp : Real;   // Вспомогательная переменная
+      tempTiReal : Real;   // I состотовляющая в Real
+      tempTdReal : Real;   // D состотовляющая в Real
+      tempTdLagReal : Real;   // Возмущение в real
+      tempP_comp : Real;   // Р состотовляющая
+      tempI_comp : Real;   // I состотовляющая
+      tempD_comp : Real;   // D состотовляющая
+      tempP_ratio : Real;   // Усиление
+      tempRetDiff : Real;
+      tempRetOld : Real;
+      tempDLmn : Real;
+      tempGf : Real;
+      tempReal : Real;
+   END_VAR
+
+
+BEGIN
+	//=============================================================================
+	//-----------------------------------------------------------------------------
+	// Протестировано на: CPU 1214 FW 4.2 Среда разработки: TIA Portal 16
+	// Ограничения:  -
+	// Требования: -
+	// Функционал: копия ПИД-регулятора Cont_C из Step7 v5.6
+	//-----------------------------------------------------------------------------
+	//
+	//
+	//Таблица изменений:
+	//
+	// Версия          Дата                 Специалист                 Внесенные изменения
+	// 01.00.00       26.01.2022           Кузьменко Д.С.                 Исходная версия
+	//=============================================================================
+	
+	
+	REGION Управление регулятором
+	    #instModeChange(CLK := #ModeActivate);
+	    IF #instModeChange.Q
+	    THEN
+	        #statPresetMode := #Mode;
+	    END_IF;
+	    
+	    IF #statPresetMode < 3 OR #statPresetMode > 4
+	    THEN
+	        #Error := TRUE;
+	    END_IF;
+	    
+	    IF #Error
+	    THEN
+	        #State := 5;
+	    ELSE
+	        #State := #statPresetMode;
+	    END_IF;
+	    
+	    IF #ErrorAck
+	    THEN
+	        #Error := FALSE;
+	    END_IF;
+	    
+	END_REGION ;
+	
+	REGION Полный рестарт
+	    IF #Reset
+	    THEN
+	        // Обнуление переменных
+	        #statIOld := #I_startVal;
+	        #Output := 0.0;
+	        #SetpointLimit_H := 0;
+	        #SetpointLimit_L := 0;
+	        #Output_P := 0.0;
+	        #Output_I := 0.0;
+	        #Output_D := 0.0;
+	        #Output_PER := 0;
+	        #ScaledInput := 0.0;
+	        #ErrorValue := 0.0;
+	        #statInvOld := 0.0;
+	        #statRestInt := 0.0;
+	        #statRestDif := 0.0;
+	        #statBack := 0.0;
+	        #statLmn := 0.0;
+	        #statHLmOn := 0;
+	        #statLLmOn := 0;
+	        
+	    END_IF;
+	END_REGION ;
+	
+	REGION Расчет сигнала управления
+	    IF NOT #Error AND NOT #Reset
+	    THEN
+	        
+	        REGION Инициализация входных данных           
+	            #tempCycleReal := DINT_TO_REAL(TIME_TO_DINT(#Cycle)) / 1000.0;
+	            #tempActual := INT_TO_REAL(WORD_TO_INT(#Input_PER)) * 100.0 / 27648.0;
+	            #tempActual := #tempActual * #InputMultFactor + #InputSumFactor;
+	            
+	            IF NOT #Input_PER_on THEN
+	                #tempActual := #Input;
+	            END_IF;
+	            
+	            #ScaledInput := #tempActual;
+	            #tempErKp := #Setpoint - #ScaledInput;
+	            
+	            IF #tempErKp < (- #Deadband) THEN
+	                #ErrorValue := #tempErKp + #Deadband;
+	            ELSIF #tempErKp > #Deadband THEN
+	                #ErrorValue := #tempErKp - #Deadband;
+	            ELSE
+	                #ErrorValue := 0.0;
+	            END_IF;
+	            
+	            #tempErKp := #ErrorValue * #P;
+	            #tempTiReal := DINT_TO_REAL(TIME_TO_DINT(#I)) / 1000.0;
+	            #tempTdReal := DINT_TO_REAL(TIME_TO_DINT(#D)) / 1000.0;
+	            #tempTdLagReal := DINT_TO_REAL(TIME_TO_DINT(#TmLag)) / 1000.0;
+	        END_REGION ;
+	        
+	        REGION Проверка на допустимость временных настроек регулятора
+	            // Минимальное время интегрирования - Cycle / 2
+				IF #tempTiReal < (#tempCycleReal * 0.5) THEN
+	                #tempTiReal := #tempCycleReal * 0.5;
+	            END_IF;                                                              
+	            
+	            IF #tempTdReal < #tempCycleReal THEN
+	                #tempTdReal := #tempCycleReal;
+	            END_IF; 
+				
+	            // Минимальное время дифференцирования - Cycle
+	            IF #tempTdLagReal < #tempCycleReal * 0.5 THEN
+	                #tempTdLagReal := #tempCycleReal * 0.5;
+	            END_IF;
+	        END_REGION ;
+	        
+	        REGION Вычисление пропорциональной составляющей
+	            IF #P_on
+	            THEN
+	                #tempP_comp := #tempErKp;
+	            ELSE
+	                #tempP_comp := 0.0;
+	            END_IF;
+	        END_REGION ;
+	        
+	        REGION Вычисление интегральной составляющей
+	            IF #I_on                    
+	            THEN
+	                IF #I_init             
+	                THEN
+	                    #tempI_comp := #I_startVal;
+	                    #statRestInt := 0.0;
+	                ELSE
+	                    IF #ManualEnable OR #statPresetMode = 4                                       
+	                    THEN
+	                        #tempI_comp := #statLmn - #tempP_comp - #Disturbance;
+	                        #statRestInt := 0.0;
+	                    ELSE                                                    
+	                        #tempDiff := #tempCycleReal / #tempTiReal * (#tempErKp + #statInvOld) * 0.5 + #statRestInt;
+	                        IF ((#tempDiff > 0.0) AND #statHLmOn OR #I_hold) OR ((#tempDiff < 0.0) AND #statLLmOn) THEN
+	                            #tempDiff := 0.0;
+	                        END_IF;
+	                        #tempI_comp := #statIOld + #tempDiff;
+	                        #statRestInt := #statIOld - #tempI_comp + #tempDiff;
+	                    END_IF;
+	                END_IF;
+	            ELSE
+	                #tempI_comp := 0.0;
+	                #statRestInt := 0.0;
+	            END_IF;
+	        END_REGION ;
+	        
+	        REGION Вычисление дифференциальной составляющей
+	            #tempDiff := #tempErKp;
+	            IF (NOT #ManualEnable AND NOT (#statPresetMode = 4)) AND #D_on
+	            THEN
+	                #tempP_ratio := #tempTdReal / (#tempCycleReal * 0.5 + #tempTdLagReal);
+	                #tempD_comp := (#tempDiff - #statBack) * #tempP_ratio;
+	                #tempRetOld := #statBack;
+	                #tempRetDiff := #tempCycleReal / #tempTdReal * #tempD_comp + #statRestDif;
+	                #statBack := #tempRetDiff + #tempRetOld;
+	                #statRestDif := #tempRetOld - #statBack + #tempRetDiff;
+	            ELSE
+	                #tempD_comp := 0.0;
+	                #statRestDif := 0.0;
+	                #statBack := #tempDiff;
+	            END_IF;
+	        END_REGION ;
+	        
+	        REGION Формирование выхода
+	            #tempDLmn := #tempP_comp + #tempI_comp + #tempD_comp + #Disturbance;
+	            
+	            IF #ManualEnable OR #statPresetMode = 4           
+	            THEN
+	                #tempDLmn := #ManualValue;      
+	            ELSE
+	                
+	                IF (NOT #I_init) AND #I_on
+	                THEN
+	                    
+	                    IF (#tempI_comp > (#HLM - #Disturbance)) AND (#tempDLmn > #HLM) AND ((#tempDLmn - #Output_D) > #HLM)
+	                    THEN
+	                        #tempReal := #HLM - #Disturbance;
+	                        #tempGf := #tempDLmn - #HLM;
+	                        #tempReal := #tempI_comp - #tempReal;
+	                        
+	                        IF #tempReal > #tempGf THEN
+	                            #tempReal := #tempGf;
+	                        END_IF;
+	                        #tempI_comp := #tempI_comp - #tempReal;
+	                    ELSE
+	                        
+	                        IF (#tempI_comp < (#LLM - #Disturbance)) AND (#tempDLmn < #LLM) AND ((#tempDLmn - #Output_D) < #LLM)
+	                        THEN
+	                            #tempReal := #LLM - #Disturbance;
+	                            #tempGf := #tempDLmn - #LLM;
+	                            #tempReal := #tempI_comp - #tempReal;
+	                            
+	                            IF #tempReal < #tempGf THEN
+	                                #tempReal := #tempGf;
+	                            END_IF;
+	                            
+	                            #tempI_comp := #tempI_comp - #tempReal;
+	                        END_IF;
+	                    END_IF;
+	                END_IF;
+	            END_IF;
+	            #Output_P := #tempP_comp;
+	            #Output_I := #tempI_comp;
+	            #Output_D := #tempD_comp;
+	            #statInvOld := #tempErKp;
+	            #statIOld := #tempI_comp;
+	            #statHLmOn := 0;
+	            #statLLmOn := 0;
+	            
+	            IF (#tempDLmn >= #HLM)
+	            THEN
+	                #SetpointLimit_H := 1;
+	                #SetpointLimit_L := 0;
+	                #tempDLmn := #HLM;
+	                #statHLmOn := 1;
+	            ELSE
+	                #SetpointLimit_H := 0;
+	                
+	                IF (#tempDLmn <= #LLM)
+	                THEN
+	                    #SetpointLimit_L := 1;
+	                    #tempDLmn := #LLM;
+	                    #statLLmOn := 1;
+	                ELSE
+	                    #SetpointLimit_L := 0;
+	                END_IF;
+	            END_IF;
+	            #statLmn := #tempDLmn;
+	            #tempDLmn := #statLmn * #OutputMultFactor + #OutputSumFactor;
+	            
+	            IF #InvertOutput
+	            THEN
+	                #Output := #HLM - #tempDLmn;
+	            ELSE
+	                #Output := #tempDLmn;
+	            END_IF;
+	            
+	            #tempDLmn := #Output * 2.764800e+002;
+	            
+	            IF #tempDLmn >= 3.251100e+004
+	            THEN
+	                #tempDLmn := 3.251100e+004;
+	            ELSE
+	                IF #tempDLmn <= -3.251200e+004
+	                THEN
+	                    #tempDLmn := -3.251200e+004;
+	                END_IF;
+	            END_IF;
+	            
+	            #Output_PER := INT_TO_WORD(REAL_TO_INT(#tempDLmn));
+	        END_REGION ;
+	    END_IF;
+	END_REGION ;
+END_FUNCTION_BLOCK
+
