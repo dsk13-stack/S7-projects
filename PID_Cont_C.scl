@@ -1,6 +1,3 @@
-
-```Pascal
- 
  FUNCTION_BLOCK "PID_C"
 { S7_Optimized_Access := 'TRUE' }
 VERSION : 0.1
@@ -348,4 +345,3 @@ BEGIN
 	    END_IF;
 	END_REGION ;
 END_FUNCTION_BLOCK
-```
