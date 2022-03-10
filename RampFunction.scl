@@ -1,0 +1,90 @@
+﻿FUNCTION_BLOCK "RampFunction"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      rampUp : Real;   // Время возрастания выходной переменной
+      rampDown : Real;   // Время уменьшения выходной переменной
+      hlm : Real;   // Верхний предел выходного сигнала
+      llm : Real;   // Нижний предел выходного сигнала
+      setpoint : Real;   // Уставка
+      enable : Bool;   // Запуск (True - приращение, False - уменьшение)
+      stop : Bool;   // Экстренная остановка (setpoint = 0)
+   END_VAR
+
+   VAR_OUTPUT 
+      output : Real;   // Выходная переменная действительная
+      analogOutput : Word;   // Выходная переменная аналоговая
+   END_VAR
+
+   VAR 
+      statCycleTime : LReal;   // Время цикла в секундах
+      statRuntimeMemo : LReal;   // Сервисная величина для функции Runtime
+      statRampIncrement : Real;   // Величина приращения переменной за один цикл
+      statRampDecrement : Real;   // Величина уменьшения переменной за один цикл
+      statCalcOutput : Real;   // Расчитаная выходная величина
+   END_VAR
+
+   VAR_TEMP 
+      tempSetpoint : Real;   // Временное хранение уставки
+   END_VAR
+
+   VAR CONSTANT 
+      AI_UPPER_LIMIT : Real := 27648.0;   // Верхний предел аналогового модуля
+   END_VAR
+
+
+BEGIN
+	//=============================================================================
+	// ООО "ЗЕМЛЯНСКМОЛОКО// (c)Copyright (2022)
+	//-----------------------------------------------------------------------------
+	// Протестировано на: CPU 1214 FW 4.2 Среда разработки: TIA Portal 16
+	// Ограничения:  -
+	// Требования: -
+	// Функционал: линейно нарастающая функция. Расчет изменения выходного сигнала в зависимости от 
+	// времени цикла ПЛК.
+	//-----------------------------------------------------------------------------
+	//
+	//
+	//Таблица изменений:
+	//
+	// Версия          Дата                 Специалист                 Внесенные изменения
+	// 01.00.00       26.02.2022           Кузьменко Д.С.                 Исходная версия
+	//=============================================================================
+	//
+	
+	IF #stop THEN
+	    #output := 0;
+	    #analogOutput := 0;
+	    RETURN;
+	END_IF;
+	
+	#statCycleTime := RUNTIME(#statRuntimeMemo);
+	#statRampIncrement := (#hlm - #llm / #rampUp) * (LREAL_TO_REAL(#statCycleTime));
+	#statRampDecrement := (#hlm - #llm / #rampDown) * (LREAL_TO_REAL(#statCycleTime));
+	
+	#tempSetpoint := #setpoint;
+	IF #tempSetpoint > #hlm THEN
+	    #tempSetpoint := #hlm;
+	END_IF;
+	
+	IF #enable AND #statCalcOutput < #tempSetpoint 
+	THEN
+	    #statCalcOutput := #statCalcOutput + #statRampIncrement;
+	    IF #statCalcOutput >= #tempSetpoint
+	    THEN
+	        #statCalcOutput := #tempSetpoint;
+	    END_IF;
+	ELSIF NOT #enable AND #statCalcOutput > #llm 
+	THEN
+	    #statCalcOutput := #statCalcOutput - #statRampDecrement;
+	    IF #statCalcOutput <= #llm
+	    THEN
+	        #statCalcOutput := #llm;
+	    END_IF;
+	END_IF;
+	
+	
+	#output := #statCalcOutput;
+	#analogOutput := REAL_TO_UINT((#AI_UPPER_LIMIT / (#hlm - #llm)) * #statCalcOutput + #llm);
+END_FUNCTION_BLOCK
+
