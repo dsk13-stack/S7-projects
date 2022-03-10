@@ -1,0 +1,57 @@
+﻿FUNCTION "GetRandomDint" : DInt
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      upperLimit : DInt;   // Верхний предел значения псевдослучайного числа
+   END_VAR
+
+   VAR_TEMP 
+      tempSystemTime {InstructionName := 'DTL'; LibVersion := '1.0'} : DTL;   // Системное время
+      tempSysTimeStatus : DInt;   // Статус функции чтения системного времени
+      tempRandomDword : DWord;   // Псевдослучайное число из системного времени в секундах в формате Dword
+      tempRandomDint : DInt;   // Псевдослучайное число рандомизированое
+      tempShiftedBitsNum : DWord;   // Величина сдвига для улучшения рандомизации
+      tempShiftedRandom : DWord;   // Сдвинутое вправо число для улучшения рандомизации
+   END_VAR
+
+   VAR CONSTANT 
+      RANDOMIZER : DWord := DW#16#001F;   // Коэффициент для операции И 
+      NANO_TO_SEC_SCALE_VAL : UDInt := 1000;   // Величина для преобразования наносекунд в секунды
+   END_VAR
+
+
+BEGIN
+	//=============================================================================
+	//-----------------------------------------------------------------------------
+	// Протестировано на: CPU 1214 FW 4.2 Среда разработки: TIA Portal 16
+	// Ограничения:  -
+	// Требования: -
+	// Функционал: генератор псевдослучайных чисел из системного времени
+	// 
+	//-----------------------------------------------------------------------------
+	//
+	//
+	//Таблица изменений:
+	//
+	// Версия          Дата                 Специалист                 Внесенные изменения
+	// 01.00.00       31.10.2020           Кузьменко Д.С.                 Исходная версия
+	//=============================================================================
+	
+	// Чтение системного времени
+	#tempSysTimeStatus := RD_SYS_T(OUT => #tempSystemTime);
+	#tempRandomDword := UDINT_TO_DWORD((#tempSystemTime.NANOSECOND / #NANO_TO_SEC_SCALE_VAL));
+	
+	// Дополнительная рандомизация битовыми операциями.
+	// Улучшается случайность значений на выходе
+	#tempShiftedBitsNum := #tempRandomDword & #RANDOMIZER;
+	#tempShiftedRandom := SHR(IN := #tempRandomDword, N := #tempShiftedBitsNum);
+	#tempRandomDword := #tempRandomDword XOR #tempShiftedRandom;
+	#tempRandomDint := DWORD_TO_DINT(#tempRandomDword);
+	#tempRandomDint := ABS_DINT(IN := #tempRandomDint);
+	
+	// Ограничение верхнего предела
+	#tempRandomDint := #tempRandomDint MOD #upperLimit;
+	#GetRandomDint := #tempRandomDint;
+	RETURN;
+END_FUNCTION
+
