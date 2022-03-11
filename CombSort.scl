@@ -1,0 +1,69 @@
+﻿FUNCTION "CombSort" : Void
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_IN_OUT 
+      "array" : Array[*] of DInt;   // Входной массив Dint
+      sort : Bool;   // Флаг запуска сортировки
+   END_VAR
+
+   VAR_TEMP 
+      tempSortDistanceDint : DInt;   // Расстояние сортировки в целочисленном формате
+      i : DInt;   // Индекс первого элемента в массиве
+      j : DInt;   // Индекс вторго элемента в массиве на расстоянии SortDistance
+      tempDint : DInt;   // Временна переменная для перестановки чисел в массиве
+      tempSwaped : Bool;   // Флаг что перестанвка была произведена
+      tempSortDistanceReal : Real;   // Расстояние сортировки в действительном формате для корректного завершения цикла While
+      tempArrayLen : DInt;   // Размер входного массива
+      tempArrayStartIndex : DInt;   // Начальный индекс массива
+   END_VAR
+
+   VAR CONSTANT 
+      SORT_DIST_CONST : Real := 1.247;   // Константа расстояния сортировки расческой
+      DIMENTION : UDInt := 1;   // Глубина массива
+   END_VAR
+
+
+BEGIN
+	//=============================================================================
+	//-----------------------------------------------------------------------------
+	// Протестировано на: CPU 1214 FW 4.2 Среда разработки: TIA Portal 16
+	// Ограничения:  -
+	// Требования: -
+	// Функционал: пример реализации сортировки расческой
+	// 
+	//-----------------------------------------------------------------------------
+	//
+	//
+	//Таблица изменений:
+	//
+	// Версия          Дата                 Специалист                 Внесенные изменения
+	// 01.00.00       31.10.2020           Кузьменко Д.С.                 Исходная версия
+	//=============================================================================
+	
+	#tempArrayLen := UPPER_BOUND(ARR := #array, DIM := #DIMENTION);
+	#tempArrayStartIndex := LOWER_BOUND(ARR := #array, DIM := #DIMENTION);
+	
+	IF #sort
+	THEN
+	    #tempSortDistanceReal := DINT_TO_REAL(#tempArrayLen) / #SORT_DIST_CONST;
+	    #tempSwaped := TRUE;
+	    WHILE (#tempSortDistanceReal > 1) OR #tempSwaped DO
+	        #tempSortDistanceDint := REAL_TO_DINT(#tempSortDistanceReal);
+	        #tempSwaped := FALSE;
+	        FOR #i := #tempArrayStartIndex TO (#tempArrayLen - #tempSortDistanceDint) DO
+	            #j := #i + #tempSortDistanceDint;
+	            IF #array[#i] > #array[#j] THEN
+	                #tempDint := #array[#i];
+	                #array[#i] := #array[#j];
+	                #array[#j] := #tempDint;
+	                #tempSwaped := TRUE;
+	            END_IF;
+	        END_FOR;
+	        #tempSortDistanceReal := #tempSortDistanceReal / #SORT_DIST_CONST;
+	    END_WHILE;
+	    #sort := FALSE;
+	ELSE
+	    RETURN;
+	END_IF;
+END_FUNCTION
+
