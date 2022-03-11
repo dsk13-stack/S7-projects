@@ -1,4 +1,4 @@
-﻿FUNCTION_BLOCK "RampFunction"
+FUNCTION_BLOCK "RampFunction"
 { S7_Optimized_Access := 'TRUE' }
 VERSION : 0.1
    VAR_INPUT 
@@ -86,4 +86,3 @@ BEGIN
 	#output := #statCalcOutput;
 	#analogOutput := REAL_TO_UINT((#AI_UPPER_LIMIT / (#hlm - #llm)) * #statCalcOutput + #llm);
 END_FUNCTION_BLOCK
-
