@@ -1,0 +1,125 @@
+﻿FUNCTION "Heapify" : Void
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      arrayLen : DInt;   // Длина массива
+      parentIndex : DInt;   // Индекс родительского узла
+   END_VAR
+
+   VAR_IN_OUT 
+      "array" : Array[*] of DInt;   // Входной массив
+   END_VAR
+
+   VAR_TEMP 
+      tempLeftChildIndex : DInt;   // Индекс левого дочернего узла
+      tempRightChildIndex : DInt;   // Индекс правого дочернего узла
+      tempLargestIndex : DInt;   // Индекс наибольшего элемента в массиве
+      tempVal : DInt;   // Временная перемена для перестановки значений в массиве
+   END_VAR
+
+
+BEGIN
+	//=============================================================================
+	// 
+	//-----------------------------------------------------------------------------
+	// Протестировано на: CPU 1214 FW 4.2 Среда разработки: TIA Portal 16
+	// Ограничения:  -
+	// Требования: -
+	// Функционал: создание двоичной кучи из массива
+	// 
+	//-----------------------------------------------------------------------------
+	//
+	//
+	//Таблица изменений:
+	//
+	// Версия          Дата                 Специалист                 Внесенные изменения
+	// 01.00.00       7.04.2022            Кузьменко Д.С.                Исходная версия
+	//===============
+	
+	
+	#tempLargestIndex := #parentIndex;
+	#tempLeftChildIndex := 2 * #parentIndex + 1;
+	#tempRightChildIndex := 2 * #parentIndex + 2;
+	
+	IF #tempLeftChildIndex > #arrayLen OR #tempRightChildIndex > #arrayLen THEN
+	    RETURN;
+	END_IF;
+	
+	IF #array[#parentIndex] < #array[#tempLeftChildIndex] THEN
+	    #tempLargestIndex := #tempLeftChildIndex;
+	END_IF;
+	
+	IF #array[#tempLargestIndex] < #array[#tempRightChildIndex] THEN
+	    #tempLargestIndex := #tempRightChildIndex;
+	END_IF;
+	        
+	IF #tempLargestIndex <> #parentIndex THEN
+	    #tempVal := #array[#parentIndex];
+	    #array[#parentIndex] := #array[#tempLargestIndex];
+	    #array[#tempLargestIndex] := #tempVal;
+	    "Heapify"(arrayLen:=#arrayLen,
+	              parentIndex:=#tempLargestIndex,
+	              array:=#array);
+	    
+	END_IF;
+END_FUNCTION
+
+FUNCTION "HeapSort" : Void
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_IN_OUT 
+      "array" : Array[*] of DInt;   // Входной неупорядоченный массив
+      start : Bool;   // Запуск сортировки
+   END_VAR
+
+   VAR_TEMP 
+      tempArrayLen : DInt;   // Длинна массива
+      i : DInt;   // Индекс итераций
+      tempVal : DInt;   // Временное значение для обмена значений в массиве
+   END_VAR
+
+   VAR CONSTANT 
+      DIMENSION : UInt := 1;   // Глубина массива
+   END_VAR
+
+
+BEGIN
+	//=============================================================================
+	//
+	//-----------------------------------------------------------------------------
+	// Протестировано на: CPU 1214 FW 4.2 Среда разработки: TIA Portal 16
+	// Ограничения:  -
+	// Требования: -
+	// Функционал: пирамидальная сортировка массива
+	// 
+	//-----------------------------------------------------------------------------
+	//
+	//
+	//Таблица изменений:
+	//
+	// Версия          Дата                 Специалист                 Внесенные изменения
+	// 01.00.00       7.04.2022            Кузьменко Д.С.                Исходная версия
+	//===============
+	
+	
+	IF #start THEN
+	    #tempArrayLen := UPPER_BOUND(ARR := #array, DIM := #DIMENSION);
+	    
+	    FOR #i := #tempArrayLen TO 0 BY -1 DO
+	        "Heapify"(arrayLen := #tempArrayLen,
+	                  parentIndex := #i,
+	                  array := #array);
+	    END_FOR;
+	    
+	    FOR #i := #tempArrayLen TO 0 BY -1 DO
+	        #tempVal := #array[0];
+	        #array[0] := #array[#i];
+	        #array[#i] := #tempVal;
+	        "Heapify"(arrayLen := #i,
+	                  parentIndex := 0,
+	                  array := #array);
+	    END_FOR;
+	    #start := FALSE;
+	END_IF;
+END_FUNCTION
+
