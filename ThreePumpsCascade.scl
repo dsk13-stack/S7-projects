@@ -1,0 +1,191 @@
+﻿FUNCTION_BLOCK "ThreePumpsCascade"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      enable : Bool;   // Запуск режима каскадного управления
+      setpointReached : Bool;   // Сигнал что уставка достигнута
+      masterNumber : Byte;   // Номер ведущего насоса
+      onDelayAuxiliary : Time;   // Задержка включения вспомогательного насоса
+      offDelayAuxiliary : Time;   // Задержка выключения вспомогательного насоса
+   END_VAR
+
+   VAR_IN_OUT 
+      pump1 : "typeMotor";   // Насос 1
+      pump2 : "typeMotor";   // Насос 2
+      pump3 : "typeMotor";   // Насос 3
+      pid : "typePID";   // Параметры ПИД-регулятора
+   END_VAR
+
+   VAR 
+      statAuxiliaryPumpEnable : Bool;   // Вспомогательный насос запущен
+      statAuxiliaryPumpDisable : Bool;   // Вспомогательный насос остановлен
+      statAuxiliaryOnRequest : Bool;   // Запрос на запуск вспомогательного насоса
+      statAuxiliaryOffRequest : Bool;   // Запрос на остановку вспомогательного насоса
+      instAuxiliaryOffDelay {InstructionName := 'TON_TIME'; LibVersion := '1.0'; S7_SetPoint := 'False'} : TON_TIME;   // Таймер задержки запуска вспомогательного насоса
+      instAuxiliaryOnDelay {InstructionName := 'TON_TIME'; LibVersion := '1.0'} : TON_TIME;   // Таймер задержки остановки вспомогательного насоса
+      statPumpNumber { S7_SetPoint := 'True'} : UInt;   // Номер шага
+      instEnableRTRIG {InstructionName := 'R_TRIG'; LibVersion := '1.0'} : R_TRIG;   // Восходящий фронт запуска
+   END_VAR
+
+
+BEGIN
+	
+	//=============================================================================
+	// ООО "ЗЕМЛЯНСКМОЛОКО// (c)Copyright (2022)
+	//-----------------------------------------------------------------------------
+	// Протестировано на: CPU 1214 FW 4.2 Среда разработки: TIA Portal 16
+	// Ограничения:  -
+	// Требования: -
+	// Функционал: каскадное регулирование тремя насосами 
+	//-----------------------------------------------------------------------------
+	//
+	// Функция осуществляет управление тремя насосами с частотными преобразователями
+	// с помощью одного ПИД-регулятора. В случае, если для достижения уставки недостаточно
+	// одного насоса, он переводится в режим максимальной уставки, дальнейшее регулирование
+	// осуществляется вторым насосм. Аналогично для третьего насоса.
+	// Переменная masterNumber определяет ведущий насос и порядок дальнейшего запуска вспомогательных.
+	// Переменная setpointReached блокирует запуск или остановку насоса в случая когда выход
+	// регултора достиг минимального или максимального значения для насоса.
+	//
+	//------------------------------------------------------------------------------
+	//Таблица изменений:
+	//
+	// Версия          Дата                 Специалист                 Внесенные изменения
+	// 01.00.00       26.01.2022           Кузьменко Д.С.                 Исходная версия
+	//=============================================================================
+	//
+	
+	IF NOT #enable OR #masterNumber < 1 OR #masterNumber > 3
+	THEN
+	    #pump1.setpoint := 0.0;
+	    #pump1.enable := FALSE;
+	    #pump2.setpoint := 0.0;
+	    #pump2.enable := FALSE;
+	    #pump3.setpoint := 0.0;
+	    #pump3.enable := FALSE;
+	    #statAuxiliaryPumpEnable := FALSE;
+	    #statAuxiliaryPumpDisable := FALSE;
+	    #statAuxiliaryOnRequest := FALSE;
+	    #statAuxiliaryOffRequest := FALSE;
+	    #statPumpNumber := 0;
+	END_IF;
+	
+	#instEnableRTRIG(CLK := #enable);
+	IF #instEnableRTRIG.Q
+	THEN
+	    #statPumpNumber := #masterNumber;
+	END_IF;
+	
+	CASE #statPumpNumber OF
+	        
+	    1:
+	        #pump1.setpoint := #pid.Regler_output;
+	        #pid.LLM := #pump1.llm;
+	        #pid.HLM := #pump1.hlm;
+	        
+	        #statAuxiliaryOnRequest := (#pid.Regler_output >= #pump1.hlm) AND NOT #setpointReached;
+	        #statAuxiliaryOffRequest := (#pid.Regler_output <= #pump1.llm) AND NOT #setpointReached;
+	        
+	        IF #statAuxiliaryPumpEnable AND #masterNumber <> 2
+	        THEN
+	            #statAuxiliaryPumpEnable := FALSE;
+	            #statAuxiliaryOnRequest := FALSE;
+	            #statPumpNumber := 2;
+	            #pump1.setpoint := #pump1.hlm;
+	        ELSIF #statAuxiliaryPumpDisable AND #masterNumber = 1
+	        THEN
+	            #pump1.enable := FALSE;
+	            #statAuxiliaryPumpDisable := FALSE;
+	        ELSIF #statAuxiliaryPumpDisable AND #masterNumber <> 1
+	        THEN
+	            #statAuxiliaryPumpDisable := FALSE;
+	            #statAuxiliaryOffRequest := FALSE;
+	            #statPumpNumber := 3;
+	            #pump1.enable := FALSE;
+	            #pump1.setpoint := 0.0;
+	        ELSIF NOT #statAuxiliaryOffRequest
+	        THEN
+	            #pump1.enable := TRUE;
+	        END_IF;
+	        
+	    2:
+	        #pump2.setpoint := #pid.Regler_output;
+	        #pid.LLM := #pump2.llm;
+	        #pid.HLM := #pump2.hlm;
+	        
+	        #statAuxiliaryOnRequest := (#pid.Regler_output >= #pump2.hlm) AND NOT #setpointReached;
+	        #statAuxiliaryOffRequest := (#pid.Regler_output <= #pump2.llm) AND NOT #setpointReached;
+	        
+	        IF #statAuxiliaryPumpEnable AND #masterNumber <> 3
+	        THEN
+	            #statAuxiliaryPumpEnable := FALSE;
+	            #statAuxiliaryOnRequest := FALSE;
+	            #pump2.setpoint := #pump2.hlm;
+	            #statPumpNumber := 3;
+	        ELSIF #statAuxiliaryPumpDisable AND #masterNumber = 2
+	        THEN
+	            #pump2.enable := FALSE;
+	            #statAuxiliaryPumpDisable := FALSE;
+	        ELSIF #statAuxiliaryPumpDisable
+	        THEN
+	            #statAuxiliaryPumpDisable := FALSE;
+	            #statAuxiliaryOffRequest := FALSE;
+	            #statPumpNumber := 1;
+	            #pump2.enable := FALSE;
+	            #pump2.setpoint := 0.0;
+	        ELSIF NOT #statAuxiliaryOffRequest
+	        THEN
+	            #pump2.enable := TRUE;
+	        END_IF;
+	        
+	    3:
+	        #pump3.setpoint := #pid.Regler_output;
+	        #pid.LLM := #pump3.llm;
+	        #pid.HLM := #pump3.hlm;
+	        
+	        #statAuxiliaryOnRequest := (#pid.Regler_output >= #pump3.hlm) AND NOT #setpointReached;
+	        #statAuxiliaryOffRequest := (#pid.Regler_output <= #pump3.llm) AND NOT #setpointReached;
+	        
+	        IF #statAuxiliaryPumpEnable AND #masterNumber <> 1
+	        THEN
+	            #statAuxiliaryPumpEnable := FALSE;
+	            #statAuxiliaryOnRequest := FALSE;
+	            #pump3.setpoint := #pump3.hlm;
+	            #statPumpNumber := 1;
+	        ELSIF #statAuxiliaryPumpDisable AND #masterNumber = 3
+	        THEN
+	            #pump3.enable := FALSE;
+	            #statAuxiliaryPumpDisable := FALSE;
+	        ELSIF #statAuxiliaryPumpDisable
+	        THEN
+	            #statAuxiliaryPumpDisable := FALSE;
+	            #statAuxiliaryOffRequest := FALSE;
+	            #statPumpNumber := 2;
+	            #pump3.enable := FALSE;
+	            #pump3.setpoint := 0.0;
+	        ELSIF NOT #statAuxiliaryOffRequest
+	        THEN
+	            #pump3.enable := TRUE;
+	        END_IF;
+	        
+	END_CASE;
+	
+	#instAuxiliaryOnDelay(IN := #statAuxiliaryOnRequest,
+	                      PT := #onDelayAuxiliary);
+	
+	IF #instAuxiliaryOnDelay.Q THEN
+	    #statAuxiliaryPumpEnable := TRUE;
+	END_IF;
+	
+	#instAuxiliaryOffDelay(IN := #statAuxiliaryOffRequest,
+	                       PT := #offDelayAuxiliary);
+	
+	IF #instAuxiliaryOffDelay.Q THEN
+	    #statAuxiliaryPumpDisable := TRUE;
+	END_IF;
+	
+	
+	
+	
+END_FUNCTION_BLOCK
+
