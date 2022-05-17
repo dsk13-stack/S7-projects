@@ -1,0 +1,99 @@
+﻿FUNCTION "CalcTankVolume" : Void
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      analogInput : Int;   // аналоговый сигнал
+      tankRadius : Real;   // радиус танка
+      сoneHeight : Real;   // высота конусной части
+      coneAngle : Real;   // угол конуса
+   END_VAR
+
+   VAR_OUTPUT 
+      outVolume : Real;
+   END_VAR
+
+   VAR_IN_OUT 
+      levelSensor : "typeAnalogSensor";   // блок данных датчика
+   END_VAR
+
+   VAR_TEMP 
+      tempLevelMeters : Real;   // показания датчика в метрах
+      tempCylinderHeight : Real;   // высота продукта
+      tempCylinderVolume : Real;   // объем продукта в цилиндрической части
+      tempConeRadius : Real;   // радиус конуса
+      tempTankVolumeCone : Real;   // объем конусной части
+      tempConeHeight : Real;   // расчетная высота конуса
+      tempConeAngle : Real;   // угол конуса в радианах
+   END_VAR
+
+   VAR CONSTANT 
+      PI : Real := 3.14159;	// Число Пи
+	  RADIAN : Real := 0.0174533;	// Константа конвертирования градусов в радианы
+	  LITERS : Real := 1000.0;	// Константа конвертирования м3 в литры 
+   END_VAR
+
+
+BEGIN
+	
+	//=============================================================================
+	// ООО "ЗЕМЛЯНСКМОЛОКО// (c)Copyright (2022)
+	//-----------------------------------------------------------------------------
+	// Протестировано на: CPU 1515-2 FW 2.8 Среда разработки: TIA Portal 16
+	// Ограничения:  -
+	// Требования: блок масштабирования аналогового сигнала "Scale", UDT "typeAnalogSensor"
+	// Функционал: Расчет объема танка с конусным основанием без учета плотности жидкости (вода)
+	//-----------------------------------------------------------------------------
+	//
+	//
+	//Таблица изменений:
+	//
+	// Версия          Дата                 Специалист                 Внесенные изменения
+	// 01.00.00       26.01.2022           Кузьменко Д.С.                 Исходная версия
+	//=============================================================================
+	//
+	
+	REGION Масштабирование датчика уровня
+	
+	    "Scale"(input := #input,                                                            
+	            scaleOutput => #tempLevelMeters,
+	            udtAnalog := #udtSensor);
+				
+	END_REGION
+	
+	REGION Расчет объема конусной части от высоты столба 
+	   
+	    IF #tempLevelMeters < #сoneHeight THEN
+	        #tempConeAngle := (#coneAngle / 2) * RADIAN;                                 
+	        #tempConeRadius := TAN(#tempConeAngle) * #tempLevelMeters;                     
+	    ELSE
+	        #tempConeRadius := #tankRadius;
+	    END_IF;
+	    
+	    IF #tempLevelMeters >= #сoneHeight THEN                                             
+	        #tempConeHeight := #сoneHeight;
+	    ELSE
+	        #tempConeHeight := #tempLevelMeters;
+	    END_IF;
+	    
+	    IF #tempConeRadius > #tankRadius THEN                                               
+	        #tempConeRadius := #tankRadius;
+	    END_IF;
+	    
+	    #tempTankVolumeCone := (#PI * (#tempConeRadius ** 2) * #tempConeHeight) / 3;
+		
+	END_REGION
+	
+	REGION Формирование выходного значения объема (цилиндр + конус)
+	
+	    IF #tempLevelMeters >= #сoneHeight THEN                                             
+	        #tempCylinderHeight := #tempLevelMeters - #сoneHeight;
+	        #tempCylinderVolume := (PI * (#tankRadius ** 2)) * #tempCylinderHeight;       
+	        #outVolume := (#tempTankVolumeCone + #tempCylinderVolume) * LITERS;                  
+	    ELSE
+	        #outVolume := #tempTankVolumeCone * LITERS;                                          
+	    END_IF;
+		
+	END_REGION
+	
+END_FUNCTION
+
