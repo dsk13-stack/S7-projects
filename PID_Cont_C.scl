@@ -180,7 +180,13 @@ BEGIN
 	                #ErrorValue := 0.0;
 	            END_IF;
 	            
-	            #tempErKp := #ErrorValue * #P;
+		    IF #InvertOutput
+	            THEN
+	                #tempErKp := #ErrorValue * (-#P);
+	            ELSE
+	                #tempErKp := #ErrorValue * #P;
+	            END_IF;
+		    
 	            #tempTiReal := DINT_TO_REAL(TIME_TO_DINT(#I)) / 1000.0;
 	            #tempTdReal := DINT_TO_REAL(TIME_TO_DINT(#D)) / 1000.0;
 	            #tempTdLagReal := DINT_TO_REAL(TIME_TO_DINT(#TmLag)) / 1000.0;
@@ -321,13 +327,6 @@ BEGIN
 	            END_IF;
 	            #statLmn := #tempDLmn;
 	            #tempDLmn := #statLmn * #OutputMultFactor + #OutputSumFactor;
-	            
-	            IF #InvertOutput
-	            THEN
-	                #Output := #HLM - #tempDLmn;
-	            ELSE
-	                #Output := #tempDLmn;
-	            END_IF;
 	            
 	            #tempDLmn := #Output * 2.764800e+002;
 	            
